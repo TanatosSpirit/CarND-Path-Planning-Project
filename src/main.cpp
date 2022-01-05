@@ -57,8 +57,15 @@ int main() {
   //Have a reference velocity to target
   double ref_vel = 0.0; //mph
 
+
+  // At each timestep, ego can set acceleration to value between
+  //   -MAX_ACCEL and MAX_ACCEL
+  int MAX_ACCEL = 10; // m/s^2
+
+  double max_speed_change = MAX_ACCEL * .02 * 2.224;
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &lane, &ref_vel]
+               &map_waypoints_dx,&map_waypoints_dy, &lane, &ref_vel, &max_speed_change]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -134,11 +141,11 @@ int main() {
 
           if(too_close)
           {
-            ref_vel -= .224;
+            ref_vel -= max_speed_change;
           }
           else if(ref_vel < 49.5)
           {
-            ref_vel += 0.224;
+            ref_vel += max_speed_change;
           }
 
           // Create a list of widely spaced (x,y) waypoints, evenly spaced at 30m
