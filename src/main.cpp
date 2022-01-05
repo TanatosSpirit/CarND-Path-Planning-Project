@@ -51,12 +51,21 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
+  enum Lanes
+  {
+      LEFT_LANE,
+      CENTER_LANE,
+      RIGHT_LANE,
+  };
+
   //start in lane
   int lane = 1;
 
   //Have a reference velocity to target
   double ref_vel = 0.0; //mph
 
+  // impacts default behavior for most states
+  double SPEED_LIMIT = 49.5;
 
   // At each timestep, ego can set acceleration to value between
   //   -MAX_ACCEL and MAX_ACCEL
@@ -109,39 +118,251 @@ int main() {
             car_s = end_path_s;
           }
 
+
           bool too_close = false;
+          bool center_lane_free = true;
+          bool left_lane_free = true;
+          bool right_lane_free = true;
+          double left_speed, center_speed, right_speed;
+
+          bool is_possible_left_lane_change = false;
+          bool is_possible_center_lane_change = false;
+          bool is_possible_right_lane_change = false;
+
+          vector<double> costs = {49.5, 49.5, 49.5};
+          vector<string> lanes = {"left", "center", "right"};
 
           // find ref_v to use
           for(int i = 0; i < sensor_fusion.size(); i++)
           {
-            // car is in my lane
             float d = sensor_fusion[i][6];
-            if(d < (2+4*lane+2) && d > (2+4*lane-2))
-            {
-                double vx = sensor_fusion[i][3];
-                double vy = sensor_fusion[i][4];
-                double check_speed = sqrt(vx*vx+vy*vy);
-                double check_car_s = sensor_fusion[i][5];
+            double vx = sensor_fusion[i][3];
+            double vy = sensor_fusion[i][4];
+            double check_speed = sqrt(vx*vx+vy*vy);
+            double check_car_s = sensor_fusion[i][5];
 
-                check_car_s += ((double)prev_size * .02 * check_speed); // if using previous points can project s value
-                                                                        //out check s values greater than mine and s gap
-                if((check_car_s > car_s) && ((check_car_s - car_s) < 30))
+            check_car_s += ((double)prev_size * .02 * check_speed); // if using previous points can project s value
+                                                                    //out check s values greater than mine and s gap
+            // check if there are other cars on the left lane
+            if(d < (2+4*LEFT_LANE+2) && d > (2+4*LEFT_LANE-2))
+            {
+              if((check_car_s > car_s) && ((check_car_s - car_s) < 30))
+              {
+                // Do some logic here, lower reference velocity so we dont crash into the car inform of us, could
+                // also flag to try to change lanes
+                if(lane == LEFT_LANE)
                 {
-                  // Do some logic here, lower reference velocity so we dont crash into the car inform of us, could
-                  // also flag to try to change lanes
-//                  ref_vel = 29.5; //mph
                   too_close = true;
-                  if(lane > 0)
-                  {
-                    lane = 0;
-                  }
                 }
+                left_speed = check_speed;
+                costs[0] = left_speed;
+                left_lane_free = false;
+              }
+              if(lane != LEFT_LANE)
+              {
+                if((check_car_s < car_s) && ((check_car_s - car_s) > -10))
+                {
+                  is_possible_left_lane_change = true;
+                }
+              }
             }
+
+//            // check if there are other cars on the left of the car
+//            if (d < (2 + 4 * (lane - 1) + 2) && d > (2 + 4 * (lane - 1) - 2)) {
+//              if (((check_car_s > car_s) && ((check_car_s - car_s) < 30)) || ((check_car_s < car_s) && ((check_car_s - car_s) > -10))) {
+//                left_lane_free = false;
+//              }
+//            }
+//            else if (lane == 0)
+//            {
+//              left_lane_free = false;
+//            }
+
+            // check if there are other cars on the left of the car
+            if (d < (2 + 4 * CENTER_LANE + 2) && d > (2 + 4 * CENTER_LANE - 2)) {
+              if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
+                if(lane == CENTER_LANE)
+                {
+                  too_close = true;
+                }
+                center_lane_free = false;
+                center_speed = check_speed;
+                costs[1] = center_speed;
+              }
+              if(lane != CENTER_LANE)
+              {
+                if((check_car_s < car_s) && ((check_car_s - car_s) > -10))
+                {
+                  is_possible_center_lane_change = true;
+                }
+              }
+            }
+//            else if (lane == 0)
+//            {
+//              left_lane_free = false;
+//            }
+
+//            // check if there are other cars on the right of the car
+//            if (d < (2 + 4 * (lane + 1) + 2) && d > (2 + 4 * (lane + 1) - 2)) {
+//              if (((check_car_s > car_s) && ((check_car_s - car_s) < 30)) || ((check_car_s < car_s) && ((check_car_s - car_s) > -10))) {
+//                right_lane_free = false;
+//              }
+//            }
+//            else if (lane == 2)
+//            {
+//              right_lane_free = false;
+//            }
+
+            // check if there are other cars on the right of the car
+            if (d < (2 + 4 * RIGHT_LANE + 2) && d > (2 + 4 * RIGHT_LANE - 2)) {
+              if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
+                if(lane == RIGHT_LANE)
+                {
+                  too_close = true;
+                }
+                right_lane_free = false;
+                right_speed = check_speed;
+                costs[2] = right_speed;
+              }
+              if(lane != RIGHT_LANE)
+              {
+                if((check_car_s < car_s) && ((check_car_s - car_s) > -10))
+                {
+                  is_possible_right_lane_change = true;
+                }
+              }
+            }
+//            else if (lane == 2)
+//            {
+//              right_lane_free = false;
+//            }
+
+//            if(left_lane_free && right_lane_free)
+//            {
+//              right_lane_free = false; // because we are going counterclockwise in a circle
+//            }
           }
+
+          vector<double>::iterator best_cost = max_element(begin(costs), end(costs));
+          int best_idx = distance(begin(costs), best_cost);
+
+          /**
+          for(auto cost:costs)
+          {
+            std::cout << cost << " , ";
+          }
+          std::cout << std::endl;
+          std::cout << "Costs.size(): " << costs.size() << std::endl;
+          std::cout << "best_idx: " << best_idx << std::endl;
+          **/
 
           if(too_close)
           {
-            ref_vel -= max_speed_change;
+            if(lane == CENTER_LANE && !center_lane_free)
+            {
+              if(left_lane_free && right_lane_free)
+              {
+                lane = LEFT_LANE;
+                std::cout << "Change to left lane" << std::endl;
+              }else if(!left_lane_free && !right_lane_free)
+              {
+                if(lane == best_idx)
+                {
+                  std::cout << "Keep " << lanes[best_idx] << " lane" << std::endl;
+                  ref_vel -= max_speed_change;
+                }
+                else
+                {
+                  lane = best_idx;
+                  std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+                }
+              }else if(left_lane_free && !right_lane_free)
+              {
+                lane = LEFT_LANE;
+                std::cout << "Change to left lane" << std::endl;
+              }
+              else if(!left_lane_free && right_lane_free)
+              {
+                lane = RIGHT_LANE;
+                std::cout << "Change to right lane" << std::endl;
+              }
+            }
+
+            if(lane == LEFT_LANE && !left_lane_free)
+            {
+              if(center_lane_free && right_lane_free)
+              {
+                lane = center_lane_free;
+                std::cout << "Change to center lane" << std::endl;
+              }else if(!center_lane_free && !right_lane_free)
+              {
+                if(lane == best_idx)
+                {
+                  std::cout << "Keep " << lanes[best_idx] << " lane" << std::endl;
+                  ref_vel -= max_speed_change;
+                }
+                else
+                {
+                  lane = best_idx;
+                  std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+                }
+              }else if(center_lane_free && !right_lane_free)
+              {
+                lane = CENTER_LANE;
+                std::cout << "Change to center lane" << std::endl;
+              }
+              else if(!center_lane_free && right_lane_free)
+              {
+                lane = RIGHT_LANE;
+                std::cout << "Change to right lane" << std::endl;
+              }
+            }
+
+            if(lane == RIGHT_LANE && !right_lane_free)
+            {
+              if(left_lane_free && center_lane_free)
+              {
+                lane = left_lane_free;
+                std::cout << "Change to left lane" << std::endl;
+              }else if(!left_lane_free && !center_lane_free)
+              {
+                if(lane == best_idx)
+                {
+                  std::cout << "Keep " << lanes[best_idx] << " lane" << std::endl;
+                  ref_vel -= max_speed_change;
+                }
+                else
+                {
+                  lane = best_idx;
+                  std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+                }
+              }else if(left_lane_free && !center_lane_free)
+              {
+                lane = LEFT_LANE;
+                std::cout << "Change to left lane" << std::endl;
+              }
+              else if(!left_lane_free && center_lane_free)
+              {
+                lane = CENTER_LANE;
+                std::cout << "Change to right lane" << std::endl;
+              }
+            }
+
+
+//            if(!left_lane_free && !right_lane_free) // ACC mode
+//            {
+//              ref_vel -= max_speed_change;
+//              std::cout << "ACC Mode" << std::endl;
+//            }
+//            if (right_lane_free && lane < 2) {
+//              lane += 1;
+//              std::cout << "Right Lane Free" << std::endl;
+//            }
+//            if (left_lane_free && lane > 0) {
+//              lane -= 1;
+//              std::cout << "Left Lane Free" << std::endl;
+//
+//            }
           }
           else if(ref_vel < 49.5)
           {
