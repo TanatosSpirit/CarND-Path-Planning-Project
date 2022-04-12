@@ -8,11 +8,201 @@
 #include "helpers.h"
 #include "json.hpp"
 #include "spline.h"
+#include "vehicle.h"
 
 // for convenience
 using nlohmann::json;
 using std::string;
 using std::vector;
+
+// Initializes Vehicle
+Vehicle::Vehicle()= default;
+
+Vehicle::Vehicle(int lane,vector<double> map_waypoints_s,vector<double> map_waypoints_x, vector<double> map_waypoints_y,
+                 std::string state) {
+  current_lane_ = lane;
+  state_ = state;
+  max_acceleration_ = -1;
+  map_waypoints_s_ = map_waypoints_s;
+  map_waypoints_x_ = map_waypoints_x;
+  map_waypoints_y_ = map_waypoints_y;
+}
+
+std::vector<std::string> Vehicle::successor_states() {
+  vector<string> states;
+  states.emplace_back("KL");
+
+  if(current_state_ == "KL")
+  {
+    states.emplace_back("PLCL");
+    states.emplace_back("PLCR");
+  }
+  else if (current_state_ == "PLCL")
+  {
+    if (current_lane_ != LEFT_LANE)
+    {
+      states.emplace_back("PLCL");
+      states.emplace_back("LCL");
+    }
+  }
+  else if (current_state_ == "PLCR")
+  {
+    if (current_lane_ != RIGHT_LANE)
+    {
+      states.emplace_back("PLCR");
+      states.emplace_back("LCR");
+    }
+  }
+
+  return states;
+}
+
+
+std::pair<vector<double>, vector<double>> Vehicle::generate_trajectory(double ref_vel, int lane) {
+
+  // Create a list of widely spaced (x,y) waypoints, evenly spaced at 30m
+  // later we will interpolate these waypoints with a spline and fill it in with more points that control spaced
+  vector<double> ptsx;
+  vector<double> ptsy;
+
+  // reference x, y, yaw states
+  // either we will reference the starting point as where the car is or at the previous paths end point
+  double ref_x = car_x_;
+  double ref_y = car_y_;
+  double ref_yaw = deg2rad(car_yaw_);
+
+  //if previous size is almost empty, use the car as starting reference
+  if(prev_size_ < 2)
+  {
+    //Use two points that makes the path tangent to the car
+    double prev_car_x = car_x_ - cos(car_yaw_);
+    double prev_car_y = car_y_ - sin(car_yaw_);
+
+    ptsx.push_back(prev_car_x);
+    ptsx.push_back(car_x_);
+
+    ptsy.push_back(prev_car_y);
+    ptsy.push_back(car_y_);
+  }
+    //use the previous path's end point as starting reference
+  else
+  {
+    //Redefine reference state as previous path end point
+    ref_x = previous_path_x_[prev_size_-1];
+    ref_y = previous_path_y_[prev_size_-1];
+
+    double ref_x_prev = previous_path_x_[prev_size_-2];
+    double ref_y_prev = previous_path_y_[prev_size_-2];
+    ref_yaw = atan2(ref_y-ref_y_prev, ref_x-ref_x_prev);
+
+    //Use two points that makes the path tangent to the previous path's end point
+    ptsx.push_back(ref_x_prev);
+    ptsx.push_back(ref_x);
+
+    ptsy.push_back(ref_y_prev);
+    ptsy.push_back(ref_y);
+  }
+
+
+  //In Frenet add evenly 30m spaced points ahead of the starting reference
+//  vector<double> next_wp0 = getXY(car_s_+30, (2+4*current_lane_), map_waypoints_s_, map_waypoints_x_, map_waypoints_y_);
+//  vector<double> next_wp1 = getXY(car_s_+60, (2+4*current_lane_), map_waypoints_s_, map_waypoints_x_, map_waypoints_y_);
+//  vector<double> next_wp2 = getXY(car_s_+90, (2+4*current_lane_), map_waypoints_s_, map_waypoints_x_, map_waypoints_y_);
+  vector<double> next_wp0 = getXY(car_s_+30, (2+4*lane), map_waypoints_s_, map_waypoints_x_, map_waypoints_y_);
+  vector<double> next_wp1 = getXY(car_s_+60, (2+4*lane), map_waypoints_s_, map_waypoints_x_, map_waypoints_y_);
+  vector<double> next_wp2 = getXY(car_s_+90, (2+4*lane), map_waypoints_s_, map_waypoints_x_, map_waypoints_y_);
+
+  ptsx.push_back(next_wp0[0]);
+  ptsx.push_back(next_wp1[0]);
+  ptsx.push_back(next_wp2[0]);
+
+  ptsy.push_back(next_wp0[1]);
+  ptsy.push_back(next_wp1[1]);
+  ptsy.push_back(next_wp2[1]);
+
+
+  for(int i = 0; i < ptsx.size(); i++)
+  {
+    //shift car reference angle to 0 degrees
+    double shift_x = ptsx[i] - ref_x;
+    double shift_y = ptsy[i] - ref_y;
+
+    ptsx[i] = (shift_x * cos(0-ref_yaw) - shift_y * sin(0-ref_yaw));
+    ptsy[i] = (shift_x * sin(0-ref_yaw) + shift_y * cos(0-ref_yaw));
+  }
+
+  //create a spline
+  tk::spline s;
+
+  //set (x,y) points to the spline
+  s.set_points(ptsx, ptsy);
+
+  //Define the actual (x,y) points we will use for the planner
+  vector<double> next_x_vals;
+  vector<double> next_y_vals;
+
+  //Start with all of the previous path points from last time
+  for(int i=0; i < previous_path_x_.size(); i++)
+  {
+    next_x_vals.push_back(previous_path_x_[i]);
+    next_y_vals.push_back(previous_path_y_[i]);
+  }
+
+  //Calculate how to break up spline points so that we travel at our desired reference velocity
+  double target_x = 30;
+  double target_y = s(target_x);
+  double target_dist = sqrt(target_x*target_x + target_y*target_y);
+
+  double x_add_on = 0;
+
+  //Fill up the rest of our path planner after filling it with previous points, here we will always output 50 points
+  for(int i = 0; i <= 50 - previous_path_x_.size(); i++)
+  {
+    double N = (target_dist/(.02*ref_vel/2.24));
+    double x_point = x_add_on + target_x/N;
+    double y_point = s(x_point);
+
+    x_add_on = x_point;
+
+    double x_ref = x_point;
+    double y_ref = y_point;
+
+    // rotate back to normal after rotating it earlier
+    x_point = x_ref*cos(ref_yaw) - y_ref*sin(ref_yaw);
+    y_point = x_ref*sin(ref_yaw) + y_ref*cos(ref_yaw);
+
+    x_point += ref_x;
+    y_point += ref_y;
+
+    next_x_vals.push_back(x_point);
+    next_y_vals.push_back(y_point);
+  }
+  return std::pair<vector<double>, vector<double>>{next_x_vals, next_y_vals};
+}
+
+void Vehicle::update(vector<double> previous_path_x, vector<double>previous_path_y, double car_x, double car_y,
+                     double car_s, double car_yaw, double end_path_s)
+{
+//  previous_path_x_ = std::move(previous_path_x);
+//  previous_path_y_ = std::move(previous_path_y);
+
+  previous_path_x_ = previous_path_x;
+  previous_path_y_ = previous_path_y;
+
+  prev_size_ = previous_path_x_.size();
+
+  car_x_ = car_x;
+  car_y_ = car_y;
+  car_s_ = car_s;
+  car_yaw_ = car_yaw;
+
+  if(prev_size_>0)
+  {
+    car_s_ = end_path_s;
+  }
+
+}
+
 
 int main() {
   uWS::Hub h;
@@ -51,13 +241,6 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
-  enum Lanes
-  {
-      LEFT_LANE,
-      CENTER_LANE,
-      RIGHT_LANE,
-  };
-
   //start in lane
   int lane = 1;
 
@@ -73,8 +256,13 @@ int main() {
 
   double max_speed_change = MAX_ACCEL * .02 * 2.224;
 
+  string current_state = "KL";
+
+  Vehicle vehicle(lane, map_waypoints_s, map_waypoints_x, map_waypoints_y,
+                  current_state);
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &lane, &ref_vel, &max_speed_change]
+               &map_waypoints_dx,&map_waypoints_dy, &lane, &ref_vel, &max_speed_change, &vehicle]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -111,6 +299,8 @@ int main() {
           //   of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
 
+          vehicle.update(previous_path_x, previous_path_y, car_x, car_y, car_s, car_yaw, end_path_s);
+
           int prev_size = previous_path_x.size();
 
           if(prev_size>0)
@@ -125,12 +315,32 @@ int main() {
           bool right_lane_free = true;
           double left_speed, center_speed, right_speed;
 
-          bool is_possible_left_lane_change = false;
-          bool is_possible_center_lane_change = false;
-          bool is_possible_right_lane_change = false;
+          vector<bool> possible_lane_change = {true, true, true};
+          vector<bool> lane_free = {true, true, true};
 
           vector<double> costs = {49.5, 49.5, 49.5};
           vector<string> lanes = {"left", "center", "right"};
+/*
+          vector<string> states = successor_states(current_state, lane);
+*/
+          /**
+          // Debug
+          std::cout << "States: ";
+          for(const auto& state:states)
+          {
+            std::cout << state << "  ";
+          }
+          std::cout << std::endl;
+          **/
+
+//          for (vector<string>::iterator it = states.begin(); it != states.end(); ++it) {
+//            vector<Vehicle> trajectory = generate_trajectory(*it, predictions);
+//            if (trajectory.size() != 0) {
+//              cost = calculate_cost(*this, predictions, trajectory);
+//              costs.push_back(cost);
+//              final_trajectories.push_back(trajectory);
+//            }
+//          }
 
           // find ref_v to use
           for(int i = 0; i < sensor_fusion.size(); i++)
@@ -157,12 +367,14 @@ int main() {
                 left_speed = check_speed;
                 costs[0] = left_speed;
                 left_lane_free = false;
+                lane_free[LEFT_LANE] = false;
               }
               if(lane != LEFT_LANE)
               {
-                if((check_car_s < car_s) && ((check_car_s - car_s) > -10))
+                if((check_car_s < car_s + 10) && (std::abs(check_car_s - car_s) < 10))
                 {
-                  is_possible_left_lane_change = true;
+
+                  possible_lane_change[LEFT_LANE] = false;
                 }
               }
             }
@@ -186,14 +398,15 @@ int main() {
                   too_close = true;
                 }
                 center_lane_free = false;
+                lane_free[CENTER_LANE] = false;
                 center_speed = check_speed;
                 costs[1] = center_speed;
               }
               if(lane != CENTER_LANE)
               {
-                if((check_car_s < car_s) && ((check_car_s - car_s) > -10))
+                if((check_car_s < car_s + 10) && (std::abs(check_car_s - car_s) < 10))
                 {
-                  is_possible_center_lane_change = true;
+                  possible_lane_change[CENTER_LANE] = false;
                 }
               }
             }
@@ -215,20 +428,21 @@ int main() {
 
             // check if there are other cars on the right of the car
             if (d < (2 + 4 * RIGHT_LANE + 2) && d > (2 + 4 * RIGHT_LANE - 2)) {
-              if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
+              if ((check_car_s > car_s ) && ((check_car_s - car_s) < 30)) {
                 if(lane == RIGHT_LANE)
                 {
                   too_close = true;
                 }
                 right_lane_free = false;
+                lane_free[RIGHT_LANE] = false;
                 right_speed = check_speed;
                 costs[2] = right_speed;
               }
               if(lane != RIGHT_LANE)
               {
-                if((check_car_s < car_s) && ((check_car_s - car_s) > -10))
+                if((check_car_s < car_s + 10) && (std::abs(check_car_s - car_s) < 10))
                 {
-                  is_possible_right_lane_change = true;
+                  possible_lane_change[RIGHT_LANE] = false;
                 }
               }
             }
@@ -256,11 +470,27 @@ int main() {
           std::cout << "best_idx: " << best_idx << std::endl;
           **/
 
+          /**
+          std::cout << "possible lane: ";
+          for(const auto& lane:possible_lane_change)
+          {
+            std::cout << lane << "  ";
+          }
+          std::cout << std::endl;
+           **/
+
+          std::cout << "Free lane: ";
+          for(const auto& l:lane_free)
+          {
+            std::cout << l << "  ";
+          }
+          std::cout << std::endl;
+
           if(too_close)
           {
             if(lane == CENTER_LANE && !center_lane_free)
             {
-              if(left_lane_free && right_lane_free)
+              if(left_lane_free && right_lane_free && possible_lane_change[LEFT_LANE])
               {
                 lane = LEFT_LANE;
                 std::cout << "Change to left lane" << std::endl;
@@ -273,27 +503,36 @@ int main() {
                 }
                 else
                 {
-                  lane = best_idx;
-                  std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+                  if(possible_lane_change[best_idx])
+                  {
+                    lane = best_idx;
+                    std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+                  }
                 }
-              }else if(left_lane_free && !right_lane_free)
+              }else if(left_lane_free && !right_lane_free && possible_lane_change[LEFT_LANE])
               {
                 lane = LEFT_LANE;
                 std::cout << "Change to left lane" << std::endl;
               }
-              else if(!left_lane_free && right_lane_free)
+              else if(!left_lane_free && right_lane_free && possible_lane_change[RIGHT_LANE])
               {
                 lane = RIGHT_LANE;
                 std::cout << "Change to right lane" << std::endl;
+              }
+              else if(!possible_lane_change[LEFT_LANE] && !possible_lane_change[RIGHT_LANE])
+              {
+                lane = CENTER_LANE;
+                std::cout << "Keep " << lanes[CENTER_LANE] << " lane" << std::endl;
+                ref_vel -= max_speed_change;
               }
             }
 
             if(lane == LEFT_LANE && !left_lane_free)
             {
-              if(center_lane_free && right_lane_free)
+              if(center_lane_free && right_lane_free && possible_lane_change[CENTER_LANE])
               {
-                lane = center_lane_free;
-                std::cout << "Change to center lane" << std::endl;
+                lane = CENTER_LANE;
+                std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;;
               }else if(!center_lane_free && !right_lane_free)
               {
                 if(lane == best_idx)
@@ -303,27 +542,46 @@ int main() {
                 }
                 else
                 {
-                  lane = best_idx;
-                  std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+                  if(best_idx == RIGHT_LANE)
+                  {
+                    if(costs[CENTER_LANE] > costs[LEFT_LANE] && possible_lane_change[CENTER_LANE])
+                    {
+                      lane = CENTER_LANE;
+                      std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;
+                    }
+                    else
+                    {
+                      lane = LEFT_LANE;
+                      std::cout << "Keep " << lanes[LEFT_LANE] << " lane" << std::endl;
+                      ref_vel -= max_speed_change;
+                    }
+                  }
+                  else if (best_idx == CENTER_LANE && possible_lane_change[CENTER_LANE])
+                  {
+                    lane = best_idx;
+                    std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+                  }
                 }
-              }else if(center_lane_free && !right_lane_free)
+              }else if(center_lane_free && possible_lane_change[CENTER_LANE])
               {
                 lane = CENTER_LANE;
                 std::cout << "Change to center lane" << std::endl;
               }
-              else if(!center_lane_free && right_lane_free)
+              else if(possible_lane_change[CENTER_LANE])
               {
-                lane = RIGHT_LANE;
-                std::cout << "Change to right lane" << std::endl;
+                lane = LEFT_LANE;
+                std::cout << "Keep " << lanes[LEFT_LANE] << " lane" << std::endl;
+                ref_vel -= max_speed_change;
               }
             }
 
+
             if(lane == RIGHT_LANE && !right_lane_free)
             {
-              if(left_lane_free && center_lane_free)
+              if(left_lane_free && center_lane_free && possible_lane_change[CENTER_LANE])
               {
-                lane = left_lane_free;
-                std::cout << "Change to left lane" << std::endl;
+                lane = CENTER_LANE;
+                std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;
               }else if(!left_lane_free && !center_lane_free)
               {
                 if(lane == best_idx)
@@ -333,18 +591,36 @@ int main() {
                 }
                 else
                 {
-                  lane = best_idx;
-                  std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+                  if(best_idx == LEFT_LANE)
+                  {
+                    if(costs[CENTER_LANE] > costs[RIGHT_LANE] && possible_lane_change[CENTER_LANE])
+                    {
+                      lane = CENTER_LANE;
+                      std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;
+                    }
+                    else
+                    {
+                      lane = RIGHT_LANE;
+                      std::cout << "Keep " << lanes[RIGHT_LANE] << " lane" << std::endl;
+                      ref_vel -= max_speed_change;
+                    }
+                  }
+                  else if (best_idx == CENTER_LANE && possible_lane_change[CENTER_LANE])
+                  {
+                    lane = best_idx;
+                    std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+                  }
                 }
-              }else if(left_lane_free && !center_lane_free)
-              {
-                lane = LEFT_LANE;
-                std::cout << "Change to left lane" << std::endl;
-              }
-              else if(!left_lane_free && center_lane_free)
+              }else if(!left_lane_free && center_lane_free && possible_lane_change[CENTER_LANE])
               {
                 lane = CENTER_LANE;
                 std::cout << "Change to right lane" << std::endl;
+              }
+              else if(possible_lane_change[CENTER_LANE])
+              {
+                lane = RIGHT_LANE;
+                std::cout << "Keep " << lanes[RIGHT_LANE] << " lane" << std::endl;
+                ref_vel -= max_speed_change;
               }
             }
 
@@ -482,6 +758,11 @@ int main() {
             next_y_vals.push_back(y_point);
           }
 
+          //Define the actual (x,y) points we will use for the planner
+          vector<double> next_x_vals_2;
+          vector<double> next_y_vals_2;
+
+          std::tie(next_x_vals_2,next_y_vals_2) = vehicle.generate_trajectory(ref_vel, lane);
 
           json msgJson;
 
@@ -499,8 +780,10 @@ int main() {
 //            next_y_vals.push_back(xy[1]);
 //          }
 
-          msgJson["next_x"] = next_x_vals;
-          msgJson["next_y"] = next_y_vals;
+//          msgJson["next_x"] = next_x_vals;
+//          msgJson["next_y"] = next_y_vals;
+          msgJson["next_x"] = next_x_vals_2;
+          msgJson["next_y"] = next_y_vals_2;
 
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
