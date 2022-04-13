@@ -180,8 +180,19 @@ std::pair<vector<double>, vector<double>> Vehicle::generate_trajectory(double re
   return std::pair<vector<double>, vector<double>>{next_x_vals, next_y_vals};
 }
 
-void Vehicle::update(vector<double> previous_path_x, vector<double>previous_path_y, double car_x, double car_y,
-                     double car_s, double car_yaw, double end_path_s)
+void Vehicle::updateLocalization(double car_x, double car_y, double car_s, double car_yaw)
+{
+  car_x_ = car_x;
+  car_y_ = car_y;
+  car_s_ = car_s;
+  car_yaw_ = car_yaw;
+
+  if(prev_size_>0)
+  {
+    car_s_ = end_path_s_;
+  }
+}
+void Vehicle::setPreviousPath(vector<double> previous_path_x, vector<double>previous_path_y, double end_path_s)
 {
 //  previous_path_x_ = std::move(previous_path_x);
 //  previous_path_y_ = std::move(previous_path_y);
@@ -190,17 +201,7 @@ void Vehicle::update(vector<double> previous_path_x, vector<double>previous_path
   previous_path_y_ = previous_path_y;
 
   prev_size_ = previous_path_x_.size();
-
-  car_x_ = car_x;
-  car_y_ = car_y;
-  car_s_ = car_s;
-  car_yaw_ = car_yaw;
-
-  if(prev_size_>0)
-  {
-    car_s_ = end_path_s;
-  }
-
+  end_path_s_ = end_path_s;
 }
 
 
@@ -261,8 +262,7 @@ int main() {
   Vehicle vehicle(lane, map_waypoints_s, map_waypoints_x, map_waypoints_y,
                   current_state);
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &lane, &ref_vel, &max_speed_change, &vehicle]
+  h.onMessage([&lane, &ref_vel, &max_speed_change, &vehicle]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -299,7 +299,8 @@ int main() {
           //   of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
 
-          vehicle.update(previous_path_x, previous_path_y, car_x, car_y, car_s, car_yaw, end_path_s);
+          vehicle.setPreviousPath(previous_path_x, previous_path_y, end_path_s);
+          vehicle.updateLocalization(car_x, car_y, car_s, car_yaw);
 
           int prev_size = previous_path_x.size();
 

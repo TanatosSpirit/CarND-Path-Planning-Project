@@ -20,8 +20,8 @@ public:
   Vehicle(int lane, vector<double> map_waypoints_s, vector<double> map_waypoints_x, vector<double> map_waypoints_y,
           string state="CS");
   std::pair<vector<double>, vector<double>> generate_trajectory(double ref_vel, int lane);
-  void update(vector<double> previous_path_x, vector<double>previous_path_y, double car_x, double car_y, double car_s,
-              double car_yaw, double end_path_s);
+  void setPreviousPath(vector<double> previous_path_x, vector<double>previous_path_y, double end_path_s);
+  void updateLocalization(double car_x, double car_y, double car_s, double car_yaw);
 
 
 private:
@@ -34,6 +34,7 @@ private:
     std::vector<double> previous_path_x_, previous_path_y_;
     double car_x_, car_y_, car_s_, car_yaw_;
     int prev_size_;
+    double end_path_s_;
     vector<double> map_waypoints_s_, map_waypoints_x_, map_waypoints_y_;
 };
 
