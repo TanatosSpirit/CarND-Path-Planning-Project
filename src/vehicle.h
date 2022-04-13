@@ -22,6 +22,8 @@ public:
   std::pair<vector<double>, vector<double>> generate_trajectory(double ref_vel, int lane);
   void setPreviousPath(vector<double> previous_path_x, vector<double>previous_path_y, double end_path_s);
   void updateLocalization(double car_x, double car_y, double car_s, double car_yaw);
+  void updatePredictions(vector<vector<double>> predictions);
+  void choose_next_state();
 
 
 private:
@@ -29,13 +31,13 @@ private:
 
     int current_lane_, s_;
     float v_, a_, max_acceleration_;
-    string state_;
     string current_state_;
     std::vector<double> previous_path_x_, previous_path_y_;
     double car_x_, car_y_, car_s_, car_yaw_;
     int prev_size_;
     double end_path_s_;
     vector<double> map_waypoints_s_, map_waypoints_x_, map_waypoints_y_;
+    vector<vector<double>> predictions_;
 };
 
 

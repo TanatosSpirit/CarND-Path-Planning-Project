@@ -21,7 +21,7 @@ Vehicle::Vehicle()= default;
 Vehicle::Vehicle(int lane,vector<double> map_waypoints_s,vector<double> map_waypoints_x, vector<double> map_waypoints_y,
                  std::string state) {
   current_lane_ = lane;
-  state_ = state;
+  current_state_ = state;
   max_acceleration_ = -1;
   map_waypoints_s_ = map_waypoints_s;
   map_waypoints_x_ = map_waypoints_x;
@@ -204,6 +204,37 @@ void Vehicle::setPreviousPath(vector<double> previous_path_x, vector<double>prev
   end_path_s_ = end_path_s;
 }
 
+void Vehicle::updatePredictions(vector<vector<double>> predictions)
+{
+  predictions_ = predictions;
+
+  for(const auto& object:predictions_)
+  {
+    for(auto state:object)
+      std::cout << state << " ";
+    std::cout << std::endl;
+  }
+}
+
+void Vehicle::choose_next_state()
+{
+  vector<string> states = successor_states();
+
+  for(const auto& state:states)
+    std::cout << state << " ";
+  std::cout << std::endl;
+
+//  for(vector<string>::iterator it = states.begin(); it != states.end(); ++it) {
+//    vector<Vehicle> trajectory = generate_trajectory(*it, predictions);
+//    if (trajectory.size() != 0) {
+//      cost = calculate_cost(*this, predictions, trajectory);
+//      costs.push_back(cost);
+//      final_trajectories.push_back(trajectory);
+//    }
+//  }
+
+}
+
 
 int main() {
   uWS::Hub h;
@@ -301,6 +332,9 @@ int main() {
 
           vehicle.setPreviousPath(previous_path_x, previous_path_y, end_path_s);
           vehicle.updateLocalization(car_x, car_y, car_s, car_yaw);
+          vehicle.updatePredictions(sensor_fusion);
+
+          vehicle.choose_next_state();
 
           int prev_size = previous_path_x.size();
 
@@ -480,12 +514,14 @@ int main() {
           std::cout << std::endl;
            **/
 
+          /**
           std::cout << "Free lane: ";
           for(const auto& l:lane_free)
           {
             std::cout << l << "  ";
           }
           std::cout << std::endl;
+          **/
 
           if(too_close)
           {
