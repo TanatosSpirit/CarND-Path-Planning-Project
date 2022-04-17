@@ -6,13 +6,6 @@
 
 using namespace std;
 
-enum Lanes
-{
-    LEFT_LANE,
-    CENTER_LANE,
-    RIGHT_LANE,
-};
-
 class Vehicle {
 public:
   // Constructors
@@ -28,6 +21,7 @@ public:
 
 private:
     vector<string> successor_states();
+    void generate_trajectory(string state);
 
     int current_lane_, s_;
     float v_, a_, max_acceleration_;

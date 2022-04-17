@@ -208,12 +208,20 @@ void Vehicle::updatePredictions(vector<vector<double>> predictions)
 {
   predictions_ = predictions;
 
+  /**
   for(const auto& object:predictions_)
   {
     for(auto state:object)
       std::cout << state << " ";
     std::cout << std::endl;
   }
+   **/
+}
+
+void Vehicle::generate_trajectory(string state)
+{
+
+
 }
 
 void Vehicle::choose_next_state()
@@ -389,7 +397,7 @@ int main() {
             check_car_s += ((double)prev_size * .02 * check_speed); // if using previous points can project s value
                                                                     //out check s values greater than mine and s gap
             // check if there are other cars on the left lane
-            if(d < (2+4*LEFT_LANE+2) && d > (2+4*LEFT_LANE-2))
+            if(isOnLeftLane(d))
             {
               if((check_car_s > car_s) && ((check_car_s - car_s) < 30))
               {
@@ -426,7 +434,7 @@ int main() {
 //            }
 
             // check if there are other cars on the left of the car
-            if (d < (2 + 4 * CENTER_LANE + 2) && d > (2 + 4 * CENTER_LANE - 2)) {
+            if (isOnCenterLane(d)) {
               if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
                 if(lane == CENTER_LANE)
                 {
@@ -462,7 +470,7 @@ int main() {
 //            }
 
             // check if there are other cars on the right of the car
-            if (d < (2 + 4 * RIGHT_LANE + 2) && d > (2 + 4 * RIGHT_LANE - 2)) {
+            if (isOnRightLane(d)) {
               if ((check_car_s > car_s ) && ((check_car_s - car_s) < 30)) {
                 if(lane == RIGHT_LANE)
                 {

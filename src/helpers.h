@@ -9,6 +9,13 @@
 using std::string;
 using std::vector;
 
+enum Lanes
+{
+    LEFT_LANE,
+    CENTER_LANE,
+    RIGHT_LANE,
+};
+
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
 //   else the empty string "" will be returned.
@@ -23,6 +30,22 @@ string hasData(string s) {
   }
   return "";
 }
+
+bool isOnLeftLane(float d_coord_other_car)
+{
+  return d_coord_other_car < (2+4*LEFT_LANE+2) && d_coord_other_car > (2+4*LEFT_LANE-2);
+}
+
+bool isOnRightLane(float d_coord_other_car)
+{
+  return d_coord_other_car < (2+4*LEFT_LANE+2) && d_coord_other_car > (2+4*LEFT_LANE-2);
+}
+
+bool isOnCenterLane(float d_coord_other_car)
+{
+  return d_coord_other_car < (2+4*LEFT_LANE+2) && d_coord_other_car > (2+4*LEFT_LANE-2);
+}
+
 
 //
 // Helper functions related to waypoints and converting from XY to Frenet
