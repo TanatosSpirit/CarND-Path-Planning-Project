@@ -312,8 +312,9 @@ std::pair<vector<double>, vector<double>> Vehicle::get_kinematics(int lane)
 //      double max_velocity_in_front = (vehicle_ahead_s - car_s_ - this->preferred_buffer) + vehicle_ahead.v
 //                                    - 0.5 * (this->a);
 //      double max_velocity_in_front = vehicle_ahead_speed - max_speed_change_;
-      std::cout << "vehicle_ahead_speed: " << vehicle_ahead_speed <<  std::endl;
-      double max_velocity_in_front = std::max((ref_vel_ - max_speed_change_), vehicle_ahead_speed);
+      std::cout << "vehicle_ahead_speed: " << vehicle_ahead_speed * 2.224 <<  std::endl;
+      double speed_change = (ref_vel_ - vehicle_ahead_speed > max_speed_change_)  ? max_speed_change_ : ref_vel_ - vehicle_ahead_speed;
+      double max_velocity_in_front = std::max((ref_vel_ - speed_change), vehicle_ahead_speed * 2.224);
 
       ref_vel_ = std::min(std::min(max_velocity_in_front,
                                        max_velocity_accel_limit),
