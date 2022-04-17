@@ -33,6 +33,7 @@ private:
     string current_state_;
     std::vector<double> previous_path_x_, previous_path_y_;
     double car_x_, car_y_, car_s_, car_v_, car_yaw_;
+    double ref_vel_;
     int prev_size_;
     double end_path_s_;
     double max_speed_change_;

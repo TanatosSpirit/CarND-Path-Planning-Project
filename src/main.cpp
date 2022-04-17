@@ -28,6 +28,7 @@ Vehicle::Vehicle(int lane,vector<double> map_waypoints_s,vector<double> map_wayp
   map_waypoints_y_ = map_waypoints_y;
   max_speed_change_ = max_speed_change;
   SPEED_LIMIT_ = SPEED_LIMIT;
+  ref_vel_ = 0.0;
 }
 
 std::vector<std::string> Vehicle::successor_states() {
@@ -270,7 +271,7 @@ bool Vehicle::get_vehicle_ahead(vector<double> &rVehicle, int lane) {
     check_car_s += ((double)prev_size_ * .02 * check_speed); // if using previous points can project s value
                                                              //out check s values greater than mine and s gap
 
-    if (isSameLane(d, lane) && check_car_s > car_s_ && check_car_s < min_s) {
+    if (isSameLane(d, lane) && check_car_s > car_s_ && check_car_s < min_s && (check_car_s - car_s_) < 30) {
       min_s = check_car_s;
       rVehicle = vehicle;
       found_vehicle = true;
@@ -286,21 +287,22 @@ std::pair<vector<double>, vector<double>> Vehicle::get_kinematics(int lane)
   // Gets next timestep kinematics (position, velocity, acceleration)
   //   for a given lane. Tries to choose the maximum velocity and acceleration,
   //   given other vehicle positions and accel/velocity constraints.
-  double max_velocity_accel_limit = max_speed_change_ + car_v_;
-  double ref_vel;
+//  double max_velocity_accel_limit = max_speed_change_ + car_v_;
+  double max_velocity_accel_limit = ref_vel_ + max_speed_change_;
+
   vector<double> vehicle_ahead;
   vector<double> vehicle_behind;
 
   if (get_vehicle_ahead(vehicle_ahead, lane)) {
-    if (get_vehicle_behind(vehicle_behind, lane)) {
-      // must travel at the speed of traffic, regardless of preferred buffer
-      double vx = vehicle_ahead[3];
-      double vy = vehicle_ahead[4];
-      double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
-
-      ref_vel = vehicle_ahead_speed;
-
-    } else {
+//    if (get_vehicle_behind(vehicle_behind, lane)) {
+//      // must travel at the speed of traffic, regardless of preferred buffer
+//      double vx = vehicle_ahead[3];
+//      double vy = vehicle_ahead[4];
+//      double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
+//      std::cout << "vehicle_ahead_speed: " << vehicle_ahead_speed <<  std::endl;
+//      ref_vel_ = vehicle_ahead_speed;
+//
+//    } else {
       double vx = vehicle_ahead[3];
       double vy = vehicle_ahead[4];
       double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
@@ -309,17 +311,19 @@ std::pair<vector<double>, vector<double>> Vehicle::get_kinematics(int lane)
 
 //      double max_velocity_in_front = (vehicle_ahead_s - car_s_ - this->preferred_buffer) + vehicle_ahead.v
 //                                    - 0.5 * (this->a);
-      double max_velocity_in_front = vehicle_ahead_speed - max_speed_change_;
+//      double max_velocity_in_front = vehicle_ahead_speed - max_speed_change_;
+      std::cout << "vehicle_ahead_speed: " << vehicle_ahead_speed <<  std::endl;
+      double max_velocity_in_front = std::max((ref_vel_ - max_speed_change_), vehicle_ahead_speed);
 
-      ref_vel = std::min(std::min(max_velocity_in_front,
+      ref_vel_ = std::min(std::min(max_velocity_in_front,
                                        max_velocity_accel_limit),
                               SPEED_LIMIT_);
-    }
+//    }
   } else {
-    ref_vel = std::min(max_velocity_accel_limit, SPEED_LIMIT_);
+    ref_vel_ = std::min(max_velocity_accel_limit, SPEED_LIMIT_);
   }
 
-  return generate_trajectory(ref_vel, lane);
+  return generate_trajectory(ref_vel_, lane);
 }
 
 std::pair<vector<double>, vector<double>> Vehicle::keep_lane_trajectory()
@@ -412,7 +416,7 @@ int main() {
   double ref_vel = 0.0; //mph
 
   // impacts default behavior for most states
-  double SPEED_LIMIT = 49.5;
+  double SPEED_LIMIT = 49.5; //mph
 
   // At each timestep, ego can set acceleration to value between
   //   -MAX_ACCEL and MAX_ACCEL
