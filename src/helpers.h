@@ -31,6 +31,12 @@ string hasData(string s) {
   return "";
 }
 
+bool isSameLane(float d_coord_other_car, int current_lane)
+{
+  return d_coord_other_car < static_cast<float>(2+4*current_lane+2)
+          && d_coord_other_car > static_cast<float>(2+4*current_lane-2);
+}
+
 bool isOnLeftLane(float d_coord_other_car)
 {
   return d_coord_other_car < (2+4*LEFT_LANE+2) && d_coord_other_car > (2+4*LEFT_LANE-2);
@@ -38,12 +44,12 @@ bool isOnLeftLane(float d_coord_other_car)
 
 bool isOnRightLane(float d_coord_other_car)
 {
-  return d_coord_other_car < (2+4*LEFT_LANE+2) && d_coord_other_car > (2+4*LEFT_LANE-2);
+  return d_coord_other_car < (2+4*RIGHT_LANE+2) && d_coord_other_car > (2+4*RIGHT_LANE-2);
 }
 
 bool isOnCenterLane(float d_coord_other_car)
 {
-  return d_coord_other_car < (2+4*LEFT_LANE+2) && d_coord_other_car > (2+4*LEFT_LANE-2);
+  return d_coord_other_car < (2+4*CENTER_LANE+2) && d_coord_other_car > (2+4*CENTER_LANE-2);
 }
 
 

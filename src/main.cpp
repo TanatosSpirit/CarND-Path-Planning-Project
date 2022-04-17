@@ -19,13 +19,15 @@ using std::vector;
 Vehicle::Vehicle()= default;
 
 Vehicle::Vehicle(int lane,vector<double> map_waypoints_s,vector<double> map_waypoints_x, vector<double> map_waypoints_y,
-                 std::string state) {
+                 double max_speed_change, double SPEED_LIMIT, std::string state) {
   current_lane_ = lane;
   current_state_ = state;
   max_acceleration_ = -1;
   map_waypoints_s_ = map_waypoints_s;
   map_waypoints_x_ = map_waypoints_x;
   map_waypoints_y_ = map_waypoints_y;
+  max_speed_change_ = max_speed_change;
+  SPEED_LIMIT_ = SPEED_LIMIT;
 }
 
 std::vector<std::string> Vehicle::successor_states() {
@@ -180,18 +182,21 @@ std::pair<vector<double>, vector<double>> Vehicle::generate_trajectory(double re
   return std::pair<vector<double>, vector<double>>{next_x_vals, next_y_vals};
 }
 
-void Vehicle::updateLocalization(double car_x, double car_y, double car_s, double car_yaw)
+void Vehicle::updateLocalization(double car_x, double car_y, double car_s, double car_v, double car_yaw)
 {
   car_x_ = car_x;
   car_y_ = car_y;
   car_s_ = car_s;
   car_yaw_ = car_yaw;
+  car_v_ = car_v;
 
   if(prev_size_>0)
   {
     car_s_ = end_path_s_;
   }
 }
+
+
 void Vehicle::setPreviousPath(vector<double> previous_path_x, vector<double>previous_path_y, double end_path_s)
 {
 //  previous_path_x_ = std::move(previous_path_x);
@@ -203,6 +208,7 @@ void Vehicle::setPreviousPath(vector<double> previous_path_x, vector<double>prev
   prev_size_ = previous_path_x_.size();
   end_path_s_ = end_path_s;
 }
+
 
 void Vehicle::updatePredictions(vector<vector<double>> predictions)
 {
@@ -218,29 +224,147 @@ void Vehicle::updatePredictions(vector<vector<double>> predictions)
    **/
 }
 
-void Vehicle::generate_trajectory(string state)
-{
 
+bool Vehicle::get_vehicle_behind(vector<double> &rVehicle, int lane) {
+  // Returns a true if a vehicle is found behind the current vehicle, false
+  //   otherwise. The passed reference rVehicle is updated if a vehicle is found.
+  int max_s = -1;
+  bool found_vehicle = false;
 
+  for (auto vehicle:predictions_)
+  {
+    auto d = static_cast<float>(vehicle[6]);
+    double vx = vehicle[3];
+    double vy = vehicle[4];
+    double check_speed = sqrt(vx*vx+vy*vy);
+    double check_car_s = vehicle[5];
+
+    check_car_s += ((double)prev_size_ * .02 * check_speed); // if using previous points can project s value
+    //out check s values greater than mine and s gap
+
+    if (isSameLane(d, lane) && check_car_s < car_s_ && check_car_s > max_s) {
+      max_s = check_car_s;
+      rVehicle = vehicle;
+      found_vehicle = true;
+    }
+  }
+
+  return found_vehicle;
 }
 
-void Vehicle::choose_next_state()
+
+bool Vehicle::get_vehicle_ahead(vector<double> &rVehicle, int lane) {
+  // Returns a true if a vehicle is found ahead of the current vehicle, false
+  //   otherwise. The passed reference rVehicle is updated if a vehicle is found.
+//  int min_s = this->goal_s;
+  double min_s = std::numeric_limits<double>::max();
+  bool found_vehicle = false;
+
+  for(auto vehicle:predictions_){
+    auto d = static_cast<float>(vehicle[6]);
+    double vx = vehicle[3];
+    double vy = vehicle[4];
+    double check_speed = sqrt(vx*vx+vy*vy);
+    double check_car_s = vehicle[5];
+
+    check_car_s += ((double)prev_size_ * .02 * check_speed); // if using previous points can project s value
+                                                             //out check s values greater than mine and s gap
+
+    if (isSameLane(d, lane) && check_car_s > car_s_ && check_car_s < min_s) {
+      min_s = check_car_s;
+      rVehicle = vehicle;
+      found_vehicle = true;
+    }
+  }
+
+  return found_vehicle;
+}
+
+
+std::pair<vector<double>, vector<double>> Vehicle::get_kinematics(int lane)
 {
+  // Gets next timestep kinematics (position, velocity, acceleration)
+  //   for a given lane. Tries to choose the maximum velocity and acceleration,
+  //   given other vehicle positions and accel/velocity constraints.
+  double max_velocity_accel_limit = max_speed_change_ + car_v_;
+  double ref_vel;
+  vector<double> vehicle_ahead;
+  vector<double> vehicle_behind;
+
+  if (get_vehicle_ahead(vehicle_ahead, lane)) {
+    if (get_vehicle_behind(vehicle_behind, lane)) {
+      // must travel at the speed of traffic, regardless of preferred buffer
+      double vx = vehicle_ahead[3];
+      double vy = vehicle_ahead[4];
+      double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
+
+      ref_vel = vehicle_ahead_speed;
+
+    } else {
+      double vx = vehicle_ahead[3];
+      double vy = vehicle_ahead[4];
+      double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
+      double vehicle_ahead_s = vehicle_ahead[5];
+      vehicle_ahead_s += ((double)prev_size_ * .02 * vehicle_ahead_speed);
+
+//      double max_velocity_in_front = (vehicle_ahead_s - car_s_ - this->preferred_buffer) + vehicle_ahead.v
+//                                    - 0.5 * (this->a);
+      double max_velocity_in_front = vehicle_ahead_speed - max_speed_change_;
+
+      ref_vel = std::min(std::min(max_velocity_in_front,
+                                       max_velocity_accel_limit),
+                              SPEED_LIMIT_);
+    }
+  } else {
+    ref_vel = std::min(max_velocity_accel_limit, SPEED_LIMIT_);
+  }
+
+  return generate_trajectory(ref_vel, lane);
+}
+
+std::pair<vector<double>, vector<double>> Vehicle::keep_lane_trajectory()
+{
+  // Generate a keep lane trajectory.
+
+  return get_kinematics(current_lane_);
+}
+
+
+std::pair<vector<double>, vector<double>> Vehicle::generate_trajectory(string state)
+{
+  std::pair<vector<double>, vector<double>> trajectory;
+
+  if (state == "KL") {
+    trajectory = keep_lane_trajectory();
+  }
+//  else if (state == "LCL" || state == "LCR") {
+//    trajectory = lane_change_trajectory(state, predictions);
+//  } else if (state == "PLCL" || state == "PLCR") {
+//    trajectory = prep_lane_change_trajectory(state, predictions);
+//  }
+  return trajectory;
+}
+
+std::pair<vector<double>, vector<double>> Vehicle::choose_next_state()
+{
+  std::pair<vector<double>, vector<double>> final_trajectory;
+
   vector<string> states = successor_states();
 
-  for(const auto& state:states)
-    std::cout << state << " ";
-  std::cout << std::endl;
+//  for(const auto& state:states)
+//    std::cout << state << " ";
+//  std::cout << std::endl;
 
-//  for(vector<string>::iterator it = states.begin(); it != states.end(); ++it) {
-//    vector<Vehicle> trajectory = generate_trajectory(*it, predictions);
-//    if (trajectory.size() != 0) {
+  for(vector<string>::iterator it = states.begin(); it != states.end(); ++it) {
+    std::pair<vector<double>, vector<double>> trajectory = generate_trajectory(*it);
+    if (!trajectory.first.empty()) {
+      final_trajectory = trajectory;
 //      cost = calculate_cost(*this, predictions, trajectory);
 //      costs.push_back(cost);
 //      final_trajectories.push_back(trajectory);
-//    }
-//  }
-
+    }
+  }
+  return final_trajectory;
 }
 
 
@@ -299,7 +423,7 @@ int main() {
   string current_state = "KL";
 
   Vehicle vehicle(lane, map_waypoints_s, map_waypoints_x, map_waypoints_y,
-                  current_state);
+                  max_speed_change, SPEED_LIMIT, current_state);
 
   h.onMessage([&lane, &ref_vel, &max_speed_change, &vehicle]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
@@ -339,10 +463,10 @@ int main() {
           auto sensor_fusion = j[1]["sensor_fusion"];
 
           vehicle.setPreviousPath(previous_path_x, previous_path_y, end_path_s);
-          vehicle.updateLocalization(car_x, car_y, car_s, car_yaw);
+          vehicle.updateLocalization(car_x, car_y, car_s, car_speed, car_yaw);
           vehicle.updatePredictions(sensor_fusion);
 
-          vehicle.choose_next_state();
+//          vehicle.choose_next_state();
 
           int prev_size = previous_path_x.size();
 
@@ -694,7 +818,8 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          std::tie(next_x_vals,next_y_vals) = vehicle.generate_trajectory(ref_vel, lane);
+//          std::tie(next_x_vals,next_y_vals) = vehicle.generate_trajectory(ref_vel, lane);
+          std::tie(next_x_vals,next_y_vals) = vehicle.choose_next_state();
 
           json msgJson;
 
