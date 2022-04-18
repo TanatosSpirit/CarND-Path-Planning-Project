@@ -40,23 +40,22 @@ std::vector<std::string> Vehicle::successor_states() {
     states.emplace_back("PLCL");
     states.emplace_back("PLCR");
   }
-//  else if (current_state_ == "PLCL")
-//  {
-//    if (current_lane_ != LEFT_LANE)
-//    {
-//      states.emplace_back("PLCL");
-//      states.emplace_back("LCL");
-//    }
-//  }
-//  else if (current_state_ == "PLCR")
-//  {
-//    if (current_lane_ != RIGHT_LANE)
-//    {
-//      states.emplace_back("PLCR");
-//      states.emplace_back("LCR");
-//    }
-//  }
-
+  else if (current_state_ == "PLCL")
+  {
+    if (current_lane_ != LEFT_LANE)
+    {
+      states.emplace_back("PLCL");
+      states.emplace_back("LCL");
+    }
+  }
+  else if (current_state_ == "PLCR")
+  {
+    if (current_lane_ != RIGHT_LANE)
+    {
+      states.emplace_back("PLCR");
+      states.emplace_back("LCR");
+    }
+  }
   return states;
 }
 
@@ -377,6 +376,41 @@ ego_state Vehicle::prep_lane_change_trajectory(string state)
   return next_state;
 }
 
+ego_state Vehicle::lane_change_trajectory(string state) {
+  // Generate a lane change trajectory.
+  int new_lane = current_lane_ + lane_direction_[state];
+  ego_state next_state;
+
+  // Check if a lane change is possible (check if another vehicle occupies
+  //   that spot).
+  for(auto vehicle:predictions_){
+    auto d = static_cast<float>(vehicle[6]);
+    double vx = vehicle[3];
+    double vy = vehicle[4];
+    double check_speed = sqrt(vx*vx+vy*vy);
+    double check_car_s = vehicle[5];
+
+    check_car_s += ((double)prev_size_ * .02 * check_speed); // if using previous points can project s value
+    //out check s values greater than mine and s gap
+
+    if (isSameLane(d, new_lane) && check_car_s > car_s_ - 10 && check_car_s < car_s_ + 30) {
+      // If lane change is not possible, return empty trajectory.
+      return next_state;
+    }
+  }
+
+//  trajectory.push_back(Vehicle(this->lane, this->s, this->v, this->a,
+//                               this->state));
+
+  double next_lane_velocity = get_kinematics(new_lane);
+
+  next_state.velocity = next_lane_velocity;
+  next_state.state = state;
+  next_state.lane = new_lane;
+
+  return next_state;
+}
+
 
 ego_state Vehicle::generate_trajectory(string state)
 {
@@ -386,9 +420,9 @@ ego_state Vehicle::generate_trajectory(string state)
   if (state == "KL"){
     new_state = keep_lane_trajectory();
   }
-//  else if (state == "LCL" || state == "LCR") {
-//    trajectory = lane_change_trajectory(state);
-//  }
+  else if (state == "LCL" || state == "LCR") {
+    new_state = lane_change_trajectory(state);
+  }
   else if (state == "PLCL" || state == "PLCR") {
     new_state = prep_lane_change_trajectory(state);
   }
@@ -415,13 +449,17 @@ std::pair<vector<double>, vector<double>> Vehicle::choose_next_state()
 //      next_state = state;
       vector<double> vehicle_ahead;
       int intended_lane;
+      int final_lane;
 
       if (state.state == "PLCL") {
         intended_lane = state.lane - 1;
+        final_lane = state.lane;
       } else if (state.state == "PLCR") {
         intended_lane = state.lane + 1;
+        final_lane = state.lane;
       } else {
         intended_lane = state.lane;
+        final_lane = state.lane;
       }
 
       double proposed_speed_intended = SPEED_LIMIT_;
@@ -436,11 +474,25 @@ std::pair<vector<double>, vector<double>> Vehicle::choose_next_state()
         proposed_speed_intended = vehicle_ahead_speed_mph;
       }
 
-      float cost = (2.0 * SPEED_LIMIT_ - proposed_speed_intended)/SPEED_LIMIT_;
+      double proposed_speed_final = SPEED_LIMIT_;
+
+      if (get_vehicle_ahead(vehicle_ahead, final_lane))
+      {
+        double vx = vehicle_ahead[3];
+        double vy = vehicle_ahead[4];
+        double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
+        double vehicle_ahead_speed_mph = vehicle_ahead_speed * 2.224;
+
+        proposed_speed_final = vehicle_ahead_speed_mph;
+      }
+
+
+
+      float cost = (2.0 * SPEED_LIMIT_ - proposed_speed_intended - proposed_speed_final)/SPEED_LIMIT_;
       costs.emplace_back(cost);
       final_state.emplace_back(state);
 
-      std::cout << state.state << " " << cost << std::endl;
+//      std::cout << state.state << " " << cost << std::endl;
 //      cost = calculate_cost(*this, predictions, trajectory);
 //      costs.push_back(cost);
 //      final_trajectories.push_back(trajectory);
@@ -454,7 +506,7 @@ std::pair<vector<double>, vector<double>> Vehicle::choose_next_state()
   ref_vel_ = next_state.velocity;
   current_state_ = next_state.state;
   current_lane_ = next_state.lane;
-//  std::cout << current_state_ << " " << current_lane_ << " " << ref_vel_ << std::endl;
+  std::cout << current_state_ << " " << current_lane_ << " " << ref_vel_ << std::endl;
 //  return final_trajectory;
 
   return generate_trajectory(next_state.velocity, next_state.lane);;

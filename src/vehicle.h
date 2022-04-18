@@ -33,6 +33,7 @@ private:
     bool get_vehicle_behind(vector<double> &rVehicle, int lane);
     double get_kinematics(int lane);
     ego_state prep_lane_change_trajectory(string state);
+    ego_state lane_change_trajectory(string state);
 
     int current_lane_, s_;
     float v_, a_, max_acceleration_;
