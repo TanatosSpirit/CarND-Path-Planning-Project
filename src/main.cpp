@@ -40,22 +40,22 @@ std::vector<std::string> Vehicle::successor_states() {
     states.emplace_back("PLCL");
     states.emplace_back("PLCR");
   }
-  else if (current_state_ == "PLCL")
-  {
-    if (current_lane_ != LEFT_LANE)
-    {
-      states.emplace_back("PLCL");
-      states.emplace_back("LCL");
-    }
-  }
-  else if (current_state_ == "PLCR")
-  {
-    if (current_lane_ != RIGHT_LANE)
-    {
-      states.emplace_back("PLCR");
-      states.emplace_back("LCR");
-    }
-  }
+//  else if (current_state_ == "PLCL")
+//  {
+//    if (current_lane_ != LEFT_LANE)
+//    {
+//      states.emplace_back("PLCL");
+//      states.emplace_back("LCL");
+//    }
+//  }
+//  else if (current_state_ == "PLCR")
+//  {
+//    if (current_lane_ != RIGHT_LANE)
+//    {
+//      states.emplace_back("PLCR");
+//      states.emplace_back("LCR");
+//    }
+//  }
 
   return states;
 }
@@ -243,7 +243,7 @@ bool Vehicle::get_vehicle_behind(vector<double> &rVehicle, int lane) {
     check_car_s += ((double)prev_size_ * .02 * check_speed); // if using previous points can project s value
     //out check s values greater than mine and s gap
 
-    if (isSameLane(d, lane) && check_car_s < car_s_ && check_car_s > max_s) {
+    if (isSameLane(d, lane) && check_car_s < car_s_ && check_car_s > max_s && check_car_s > car_s_ - 30) {
       max_s = check_car_s;
       rVehicle = vehicle;
       found_vehicle = true;
@@ -282,77 +282,126 @@ bool Vehicle::get_vehicle_ahead(vector<double> &rVehicle, int lane) {
 }
 
 
-std::pair<vector<double>, vector<double>> Vehicle::get_kinematics(int lane)
+//std::pair<vector<double>, vector<double>> Vehicle::get_kinematics(int lane)
+double Vehicle::get_kinematics(int lane)
 {
   // Gets next timestep kinematics (position, velocity, acceleration)
   //   for a given lane. Tries to choose the maximum velocity and acceleration,
   //   given other vehicle positions and accel/velocity constraints.
 //  double max_velocity_accel_limit = max_speed_change_ + car_v_;
   double max_velocity_accel_limit = ref_vel_ + max_speed_change_;
+  double new_velocity;
 
   vector<double> vehicle_ahead;
   vector<double> vehicle_behind;
 
   if (get_vehicle_ahead(vehicle_ahead, lane)) {
-//    if (get_vehicle_behind(vehicle_behind, lane)) {
-//      // must travel at the speed of traffic, regardless of preferred buffer
-//      double vx = vehicle_ahead[3];
-//      double vy = vehicle_ahead[4];
-//      double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
-//      std::cout << "vehicle_ahead_speed: " << vehicle_ahead_speed <<  std::endl;
-//      ref_vel_ = vehicle_ahead_speed;
-//
-//    } else {
+    if (get_vehicle_behind(vehicle_behind, lane)) {
+      // must travel at the speed of traffic, regardless of preferred buffer
+      double vx = vehicle_ahead[3];
+      double vy = vehicle_ahead[4];
+      double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
+      double vehicle_ahead_speed_mph = vehicle_ahead_speed * 2.224;
+      double speed_change = (ref_vel_ - vehicle_ahead_speed_mph > max_speed_change_)  ? max_speed_change_ : ref_vel_ - vehicle_ahead_speed_mph;
+      new_velocity = std::max((ref_vel_ - speed_change), vehicle_ahead_speed_mph);
+
+    } else {
       double vx = vehicle_ahead[3];
       double vy = vehicle_ahead[4];
       double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
       double vehicle_ahead_s = vehicle_ahead[5];
       vehicle_ahead_s += ((double)prev_size_ * .02 * vehicle_ahead_speed);
 
+      double vehicle_ahead_speed_mph = vehicle_ahead_speed * 2.224;
 //      double max_velocity_in_front = (vehicle_ahead_s - car_s_ - this->preferred_buffer) + vehicle_ahead.v
 //                                    - 0.5 * (this->a);
 //      double max_velocity_in_front = vehicle_ahead_speed - max_speed_change_;
-      std::cout << "vehicle_ahead_speed: " << vehicle_ahead_speed * 2.224 <<  std::endl;
-      double speed_change = (ref_vel_ - vehicle_ahead_speed > max_speed_change_)  ? max_speed_change_ : ref_vel_ - vehicle_ahead_speed;
-      double max_velocity_in_front = std::max((ref_vel_ - speed_change), vehicle_ahead_speed * 2.224);
+      double speed_change = (ref_vel_ - vehicle_ahead_speed_mph > max_speed_change_)  ? max_speed_change_ : ref_vel_ - vehicle_ahead_speed_mph;
+      double max_velocity_in_front = std::max((ref_vel_ - speed_change), vehicle_ahead_speed_mph);
 
-      ref_vel_ = std::min(std::min(max_velocity_in_front,
+      new_velocity = std::min(std::min(max_velocity_in_front,
                                        max_velocity_accel_limit),
                               SPEED_LIMIT_);
-//    }
+    }
   } else {
-    ref_vel_ = std::min(max_velocity_accel_limit, SPEED_LIMIT_);
+    new_velocity = std::min(max_velocity_accel_limit, SPEED_LIMIT_);
   }
 
-  return generate_trajectory(ref_vel_, lane);
+//  return generate_trajectory(ref_vel_, lane);
+  return new_velocity;
 }
 
-std::pair<vector<double>, vector<double>> Vehicle::keep_lane_trajectory()
+//std::pair<vector<double>, vector<double>> Vehicle::keep_lane_trajectory()
+ego_state Vehicle::keep_lane_trajectory()
 {
   // Generate a keep lane trajectory.
+  double new_velocty = get_kinematics(current_lane_);
 
-  return get_kinematics(current_lane_);
+  ego_state new_state;
+  new_state.lane = current_lane_;
+  new_state.velocity = new_velocty;
+  new_state.state = "KL";
+
+  return new_state;
+}
+
+ego_state Vehicle::prep_lane_change_trajectory(string state)
+{
+  // Generate a trajectory preparing for a lane change.
+  ego_state next_state;
+  double new_v = 0;
+  vector<double> vehicle_behind;
+
+  int new_lane = current_lane_ + lane_direction_[state];
+
+  double curr_lane_new_velocity = get_kinematics(current_lane_);
+
+  if (get_vehicle_behind(vehicle_behind, current_lane_)) {
+    // Keep speed of current lane so as not to collide with car behind.
+    new_v = curr_lane_new_velocity;
+  } else {
+    double best_velocity;
+    double next_lane_velocity = get_kinematics(new_lane);
+    // Choose kinematics with lowest velocity.
+    if (next_lane_velocity < curr_lane_new_velocity) {
+      best_velocity = next_lane_velocity;
+    } else {
+      best_velocity = curr_lane_new_velocity;
+    }
+    new_v = best_velocity;
+  }
+  next_state.velocity = new_v;
+  next_state.lane = current_lane_;
+  next_state.state = state;
+
+  return next_state;
 }
 
 
-std::pair<vector<double>, vector<double>> Vehicle::generate_trajectory(string state)
+ego_state Vehicle::generate_trajectory(string state)
 {
   std::pair<vector<double>, vector<double>> trajectory;
+  ego_state new_state;
 
-  if (state == "KL") {
-    trajectory = keep_lane_trajectory();
+  if (state == "KL"){
+    new_state = keep_lane_trajectory();
   }
 //  else if (state == "LCL" || state == "LCR") {
-//    trajectory = lane_change_trajectory(state, predictions);
-//  } else if (state == "PLCL" || state == "PLCR") {
-//    trajectory = prep_lane_change_trajectory(state, predictions);
+//    trajectory = lane_change_trajectory(state);
 //  }
-  return trajectory;
+  else if (state == "PLCL" || state == "PLCR") {
+    new_state = prep_lane_change_trajectory(state);
+  }
+
+  return new_state;
 }
 
 std::pair<vector<double>, vector<double>> Vehicle::choose_next_state()
 {
   std::pair<vector<double>, vector<double>> final_trajectory;
+  ego_state next_state;
+  vector<ego_state> final_state;
+  vector<float> costs;
 
   vector<string> states = successor_states();
 
@@ -361,15 +410,54 @@ std::pair<vector<double>, vector<double>> Vehicle::choose_next_state()
 //  std::cout << std::endl;
 
   for(vector<string>::iterator it = states.begin(); it != states.end(); ++it) {
-    std::pair<vector<double>, vector<double>> trajectory = generate_trajectory(*it);
-    if (!trajectory.first.empty()) {
-      final_trajectory = trajectory;
+    ego_state state = generate_trajectory(*it);
+    if (state.velocity > 0.0001) {
+//      next_state = state;
+      vector<double> vehicle_ahead;
+      int intended_lane;
+
+      if (state.state == "PLCL") {
+        intended_lane = state.lane - 1;
+      } else if (state.state == "PLCR") {
+        intended_lane = state.lane + 1;
+      } else {
+        intended_lane = state.lane;
+      }
+
+      double proposed_speed_intended = SPEED_LIMIT_;
+
+      if (get_vehicle_ahead(vehicle_ahead, intended_lane))
+      {
+        double vx = vehicle_ahead[3];
+        double vy = vehicle_ahead[4];
+        double vehicle_ahead_speed = sqrt(vx*vx+vy*vy);
+        double vehicle_ahead_speed_mph = vehicle_ahead_speed * 2.224;
+
+        proposed_speed_intended = vehicle_ahead_speed_mph;
+      }
+
+      float cost = (2.0 * SPEED_LIMIT_ - proposed_speed_intended)/SPEED_LIMIT_;
+      costs.emplace_back(cost);
+      final_state.emplace_back(state);
+
+      std::cout << state.state << " " << cost << std::endl;
 //      cost = calculate_cost(*this, predictions, trajectory);
 //      costs.push_back(cost);
 //      final_trajectories.push_back(trajectory);
     }
   }
-  return final_trajectory;
+
+  vector<float>::iterator best_cost = min_element(begin(costs), end(costs));
+  int best_idx = distance(begin(costs), best_cost);
+  next_state = final_state[best_idx];
+
+  ref_vel_ = next_state.velocity;
+  current_state_ = next_state.state;
+  current_lane_ = next_state.lane;
+//  std::cout << current_state_ << " " << current_lane_ << " " << ref_vel_ << std::endl;
+//  return final_trajectory;
+
+  return generate_trajectory(next_state.velocity, next_state.lane);;
 }
 
 
@@ -667,12 +755,12 @@ int main() {
               if(left_lane_free && right_lane_free && possible_lane_change[LEFT_LANE])
               {
                 lane = LEFT_LANE;
-                std::cout << "Change to left lane" << std::endl;
+//                std::cout << "Change to left lane" << std::endl;
               }else if(!left_lane_free && !right_lane_free)
               {
                 if(lane == best_idx)
                 {
-                  std::cout << "Keep " << lanes[best_idx] << " lane" << std::endl;
+//                  std::cout << "Keep " << lanes[best_idx] << " lane" << std::endl;
                   ref_vel -= max_speed_change;
                 }
                 else
@@ -680,23 +768,23 @@ int main() {
                   if(possible_lane_change[best_idx])
                   {
                     lane = best_idx;
-                    std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+//                    std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
                   }
                 }
               }else if(left_lane_free && !right_lane_free && possible_lane_change[LEFT_LANE])
               {
                 lane = LEFT_LANE;
-                std::cout << "Change to left lane" << std::endl;
+//                std::cout << "Change to left lane" << std::endl;
               }
               else if(!left_lane_free && right_lane_free && possible_lane_change[RIGHT_LANE])
               {
                 lane = RIGHT_LANE;
-                std::cout << "Change to right lane" << std::endl;
+//                std::cout << "Change to right lane" << std::endl;
               }
               else if(!possible_lane_change[LEFT_LANE] && !possible_lane_change[RIGHT_LANE])
               {
                 lane = CENTER_LANE;
-                std::cout << "Keep " << lanes[CENTER_LANE] << " lane" << std::endl;
+//                std::cout << "Keep " << lanes[CENTER_LANE] << " lane" << std::endl;
                 ref_vel -= max_speed_change;
               }
             }
@@ -706,12 +794,12 @@ int main() {
               if(center_lane_free && right_lane_free && possible_lane_change[CENTER_LANE])
               {
                 lane = CENTER_LANE;
-                std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;;
+//                std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;;
               }else if(!center_lane_free && !right_lane_free)
               {
                 if(lane == best_idx)
                 {
-                  std::cout << "Keep " << lanes[best_idx] << " lane" << std::endl;
+//                  std::cout << "Keep " << lanes[best_idx] << " lane" << std::endl;
                   ref_vel -= max_speed_change;
                 }
                 else
@@ -721,30 +809,30 @@ int main() {
                     if(costs[CENTER_LANE] > costs[LEFT_LANE] && possible_lane_change[CENTER_LANE])
                     {
                       lane = CENTER_LANE;
-                      std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;
+//                      std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;
                     }
                     else
                     {
                       lane = LEFT_LANE;
-                      std::cout << "Keep " << lanes[LEFT_LANE] << " lane" << std::endl;
+//                      std::cout << "Keep " << lanes[LEFT_LANE] << " lane" << std::endl;
                       ref_vel -= max_speed_change;
                     }
                   }
                   else if (best_idx == CENTER_LANE && possible_lane_change[CENTER_LANE])
                   {
                     lane = best_idx;
-                    std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+//                    std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
                   }
                 }
               }else if(center_lane_free && possible_lane_change[CENTER_LANE])
               {
                 lane = CENTER_LANE;
-                std::cout << "Change to center lane" << std::endl;
+//                std::cout << "Change to center lane" << std::endl;
               }
               else if(possible_lane_change[CENTER_LANE])
               {
                 lane = LEFT_LANE;
-                std::cout << "Keep " << lanes[LEFT_LANE] << " lane" << std::endl;
+//                std::cout << "Keep " << lanes[LEFT_LANE] << " lane" << std::endl;
                 ref_vel -= max_speed_change;
               }
             }
@@ -755,12 +843,12 @@ int main() {
               if(left_lane_free && center_lane_free && possible_lane_change[CENTER_LANE])
               {
                 lane = CENTER_LANE;
-                std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;
+//                std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;
               }else if(!left_lane_free && !center_lane_free)
               {
                 if(lane == best_idx)
                 {
-                  std::cout << "Keep " << lanes[best_idx] << " lane" << std::endl;
+//                  std::cout << "Keep " << lanes[best_idx] << " lane" << std::endl;
                   ref_vel -= max_speed_change;
                 }
                 else
@@ -770,30 +858,30 @@ int main() {
                     if(costs[CENTER_LANE] > costs[RIGHT_LANE] && possible_lane_change[CENTER_LANE])
                     {
                       lane = CENTER_LANE;
-                      std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;
+//                      std::cout << "Change to " << lanes[CENTER_LANE] << " lane" << std::endl;
                     }
                     else
                     {
                       lane = RIGHT_LANE;
-                      std::cout << "Keep " << lanes[RIGHT_LANE] << " lane" << std::endl;
+//                      std::cout << "Keep " << lanes[RIGHT_LANE] << " lane" << std::endl;
                       ref_vel -= max_speed_change;
                     }
                   }
                   else if (best_idx == CENTER_LANE && possible_lane_change[CENTER_LANE])
                   {
                     lane = best_idx;
-                    std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
+//                    std::cout << "Change to " << lanes[best_idx] << " lane" << std::endl;
                   }
                 }
               }else if(!left_lane_free && center_lane_free && possible_lane_change[CENTER_LANE])
               {
                 lane = CENTER_LANE;
-                std::cout << "Change to right lane" << std::endl;
+//                std::cout << "Change to right lane" << std::endl;
               }
               else if(possible_lane_change[CENTER_LANE])
               {
                 lane = RIGHT_LANE;
-                std::cout << "Keep " << lanes[RIGHT_LANE] << " lane" << std::endl;
+//                std::cout << "Keep " << lanes[RIGHT_LANE] << " lane" << std::endl;
                 ref_vel -= max_speed_change;
               }
             }

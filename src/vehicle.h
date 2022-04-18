@@ -6,6 +6,12 @@
 
 using namespace std;
 
+struct ego_state{
+    int lane;
+    double velocity;
+    string state;
+};
+
 class Vehicle {
 public:
   // Constructors
@@ -21,11 +27,12 @@ public:
 
 private:
     vector<string> successor_states();
-    std::pair<vector<double>, vector<double>> generate_trajectory(string state);
-    std::pair<vector<double>, vector<double>> keep_lane_trajectory();
+    ego_state generate_trajectory(string state);
+    ego_state keep_lane_trajectory();
     bool get_vehicle_ahead(vector<double> &rVehicle, int lane);
     bool get_vehicle_behind(vector<double> &rVehicle, int lane);
-    std::pair<vector<double>, vector<double>> get_kinematics(int lane);
+    double get_kinematics(int lane);
+    ego_state prep_lane_change_trajectory(string state);
 
     int current_lane_, s_;
     float v_, a_, max_acceleration_;
@@ -39,6 +46,9 @@ private:
     double max_speed_change_;
     vector<double> map_waypoints_s_, map_waypoints_x_, map_waypoints_y_;
     vector<vector<double>> predictions_;
+
+    map<string, int> lane_direction_ = {{"PLCL", -1}, {"LCL", -1},
+                                       {"LCR", 1}, {"PLCR", 1}};
 };
 
 
