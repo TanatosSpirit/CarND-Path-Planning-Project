@@ -352,6 +352,8 @@ ego_state Vehicle::prep_lane_change_trajectory(string state)
   vector<double> vehicle_behind;
 
   int new_lane = current_lane_ + lane_direction_[state];
+  if(new_lane < 0 || new_lane > 2)
+    return next_state;
 
   double curr_lane_new_velocity = get_kinematics(current_lane_);
 
