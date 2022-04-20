@@ -16,6 +16,6 @@ optimal trajectory, information about the surrounding objects is additionally us
 the optimal trajectory, the state of the ego car is additionally updated.
 
 The car has successfully completed 4.32 miles without incident  
-![img](./img/Screenshot from 2022-04-20 22-58-25.png)
+![img](./img/Screenshot.png)
 
 Full video: https://youtu.be/H1YufPvcuAQ
