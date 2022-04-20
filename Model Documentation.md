@@ -14,3 +14,8 @@ Another concept for achieving the goal is to find the optimal trajectory. To cal
 I decided to use only the speed cost function, since there is no need to arrive in a specific lane. To estimate the 
 optimal trajectory, information about the surrounding objects is additionally used (main.cpp:427-470). After finding 
 the optimal trajectory, the state of the ego car is additionally updated.
+
+The car has successfully completed 4.32 miles without incident  
+![img](./img/Screenshot from 2022-04-20 22-58-25.png)
+
+Full video: https://youtu.be/H1YufPvcuAQ
