@@ -45,6 +45,7 @@ private:
     int prev_size_;
     double end_path_s_;
     double max_speed_change_;
+    double car_behind_s_, car_ahead_s_, car_behind_neighboring_lane_s_, car_ahead_neighboring_lane_s_;
     vector<double> map_waypoints_s_, map_waypoints_x_, map_waypoints_y_;
     vector<vector<double>> predictions_;
 

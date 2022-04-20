@@ -29,6 +29,10 @@ Vehicle::Vehicle(int lane,vector<double> map_waypoints_s,vector<double> map_wayp
   max_speed_change_ = max_speed_change;
   SPEED_LIMIT_ = SPEED_LIMIT;
   ref_vel_ = 0.0;
+  car_behind_s_ = 30.0;
+  car_ahead_s_ = 30.0;
+  car_behind_neighboring_lane_s_ = 5.0;
+  car_ahead_neighboring_lane_s_ = 35.0;
 }
 
 std::vector<std::string> Vehicle::successor_states() {
@@ -227,7 +231,7 @@ bool Vehicle::get_vehicle_behind(vector<double> &rVehicle, int lane) {
     check_car_s += ((double)prev_size_ * .02 * check_speed); // if using previous points can project s value
     //out check s values greater than mine and s gap
 
-    if (isSameLane(d, lane) && check_car_s < car_s_ && check_car_s > max_s && check_car_s > car_s_ - 30) {
+    if (isSameLane(d, lane) && check_car_s < car_s_ && check_car_s > max_s && check_car_s > car_s_ - car_behind_s_) {
       max_s = check_car_s;
       rVehicle = vehicle;
       found_vehicle = true;
@@ -254,7 +258,7 @@ bool Vehicle::get_vehicle_ahead(vector<double> &rVehicle, int lane) {
     check_car_s += ((double)prev_size_ * .02 * check_speed); // if using previous points can project s value
                                                              //out check s values greater than mine and s gap
 
-    if (isSameLane(d, lane) && check_car_s > car_s_ && check_car_s < min_s && (check_car_s - car_s_) < 30) {
+    if (isSameLane(d, lane) && check_car_s > car_s_ && check_car_s < min_s && check_car_s < car_s_ + car_ahead_s_) {
       min_s = check_car_s;
       rVehicle = vehicle;
       found_vehicle = true;
@@ -374,7 +378,8 @@ ego_state Vehicle::lane_change_trajectory(string state) {
     check_car_s += ((double)prev_size_ * .02 * check_speed); // if using previous points can project s value
     //out check s values greater than mine and s gap
 
-    if (isSameLane(d, new_lane) && check_car_s > car_s_ - 10 && check_car_s < car_s_ + 30) {
+    if (isSameLane(d, new_lane) && check_car_s > car_s_ - car_behind_neighboring_lane_s_ &&
+                                   check_car_s < car_s_ + car_ahead_neighboring_lane_s_) {
       // If lane change is not possible, return empty trajectory.
       return next_state;
     }
@@ -458,8 +463,6 @@ std::pair<vector<double>, vector<double>> Vehicle::choose_next_state()
 
         proposed_speed_final = vehicle_ahead_speed_mph;
       }
-
-
 
       float cost = (2.0 * SPEED_LIMIT_ - proposed_speed_intended - proposed_speed_final)/SPEED_LIMIT_;
       costs.emplace_back(cost);
